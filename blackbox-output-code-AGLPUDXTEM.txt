@@ -1,0 +1,242 @@
+import React, { useState, useRef } from 'react';
+import { Button } from "/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "/components/ui/card";
+import { Input } from "/components/ui/input";
+import { Label } from "/components/ui/label";
+
+const VisualAIDiagnosticApp = () => {
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      setError(null);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const analyzeImage = async () => {
+    if (!selectedImage) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Convert image to base64
+      const base64Image = await convertToBase64(selectedImage);
+      
+      const response = await fetch('https://oi-server.onrender.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'CustomerId': '',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer xxx'
+        },
+        body: JSON.stringify({
+          model: "openrouter/claude-sonnet-4",
+          messages: [
+            {
+              role: "system",
+              content: "أنت مساعد ذكي متخصص في التحليل البصري والتشخيص. قم بتحليل الصور المقدمة وتقديم معلومات دقيقة ومفيدة. ركز على: 1) تحديد الشيء بدقة 2) تقديم معلومات علمية 3) نصائح عملية 4) حلول مقترحة. كن دقيقًا وواضحًا في إجاباتك."
+            },
+            {
+              role: "user",
+              content: [
+                { 
+                  type: "text", 
+                  text: "يرجى تحليل هذه الصورة وتقديم معلومات مفصلة عنها. إذا كانت لنبات مريض، قدم تشخيصًا وعلاجًا. إذا كانت لحشرة، حدد نوعها وسلوكها. إذا كانت لمكون غذائي، قدم معلومات غذائية ووصفات." 
+                },
+                { 
+                  type: "image_url", 
+                  image_url: { 
+                    url: base64Image 
+                  } 
+                }
+              ]
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('فشل في تحليل الصورة');
+      }
+
+      const data = await response.json();
+      setAnalysisResult(data.choices[0].message.content);
+      
+    } catch (err) {
+      setError('حدث خطأ أثناء تحليل الصورة. يرجى المحاولة مرة أخرى.');
+      console.error('Analysis error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const resetAnalysis = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    setAnalysisResult(null);
+    setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <Card className="mb-8">
+          <CardHeader className="text-center">
+            <CardTitle className="text-3xl font-bold text-primary">
+              تطبيق "أنا أرى" للتشخيص المرئي
+            </CardTitle>
+            <CardDescription className="text-lg text-muted-foreground">
+              حمّل صورة لأي شيء واحصل على تحليل ذكي ومعلومات مفصلة
+            </CardDescription>
+          </CardHeader>
+          
+          <CardContent className="space-y-6">
+            <div className="grid w-full max-w-sm items-center gap-4 mx-auto">
+              <Label htmlFor="picture" className="text-right text-foreground">
+                اختر صورة للتحليل
+              </Label>
+              <Input 
+                id="picture" 
+                type="file" 
+                accept="image/*"
+                onChange={handleImageUpload}
+                ref={fileInputRef}
+                className="cursor-pointer"
+              />
+            </div>
+
+            {imagePreview && (
+              <div className="text-center">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-foreground mb-2">معاينة الصورة</h3>
+                  <img 
+                    src={imagePreview} 
+                    alt="معاينة الصورة المرفوعة للتحليل" 
+                    className="max-w-full h-auto max-h-64 mx-auto rounded-lg border border-border"
+                  />
+                </div>
+                
+                <Button 
+                  onClick={analyzeImage} 
+                  disabled={isLoading}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 mr-4"
+                >
+                  {isLoading ? 'جاري التحليل...' : 'ابدأ التحليل'}
+                </Button>
+                
+                <Button 
+                  onClick={resetAnalysis}
+                  variant="outline"
+                  className="border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                >
+                  مسح الصورة
+                </Button>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-destructive/15 text-destructive p-4 rounded-lg border border-destructive/50">
+                {error}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {analysisResult && (
+          <Card className="bg-muted/50 border-border">
+            <CardHeader>
+              <CardTitle className="text-2xl text-foreground">
+                نتائج التحليل
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="prose prose-sm max-w-none bg-background p-6 rounded-lg border border-border">
+                <div dangerouslySetInnerHTML={{ __html: analysisResult.replace(/\n/g, '<br/>') }} />
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-center">
+              <Button 
+                onClick={resetAnalysis}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                تحليل صورة جديدة
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {!selectedImage && (
+          <Card className="bg-muted/30 border-border">
+            <CardHeader>
+              <CardTitle className="text-xl text-foreground">
+                أمثلة على الاستخدام
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-background rounded-lg border border-border">
+                  <img 
+                    src="https://placeholder-image-service.onrender.com/image/200x150?prompt=نبات%20طماطم%20مصاب%20بأمراض%20أوراق%20صفراء%20وبقع%20بنية&id=plant-disease-001" 
+                    alt="نبات طماطم مصاب بأمراض أوراق صفراء وبقع بنية" 
+                    className="w-full h-32 object-cover rounded mb-3"
+                  />
+                  <h4 className="font-semibold text-foreground mb-2">تشخيص النباتات</h4>
+                  <p className="text-sm text-muted-foreground">تحليل الأمراض النباتية واقتراح العلاج</p>
+                </div>
+                
+                <div className="text-center p-4 bg-background rounded-lg border border-border">
+                  <img 
+                    src="https://placeholder-image-service.onrender.com/image/200x150?prompt=حشرة%20خضراء%20على%20ورقة%20نبات%20بأجنحة%20شفافة&id=insect-001" 
+                    alt="حشرة خضراء على ورقة نبات بأجنحة شفافة" 
+                    className="w-full h-32 object-cover rounded mb-3"
+                  />
+                  <h4 className="font-semibold text-foreground mb-2">تحديد الحشرات</h4>
+                  <p className="text-sm text-muted-foreground">معرفة نوع الحشرة وسلوكها وطرق المكافحة</p>
+                </div>
+                
+                <div className="text-center p-4 bg-background rounded-lg border border-border">
+                  <img 
+                    src="https://placeholder-image-service.onrender.com/image/200x150?prompt=مكون%20غذائي%20غريب%20ببذور%20سوداء%20ولون%20أرجواني&id=food-ingredient-001" 
+                    alt="مكون غذائي غريب ببذور سوداء ولون أرجواني" 
+                    className="w-full h-32 object-cover rounded mb-3"
+                  />
+                  <h4 className="font-semibold text-foreground mb-2">المكونات الغذائية</h4>
+                  <p className="text-sm text-muted-foreground">معرفة القيمة الغذائية وطرق الاستخدام</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default VisualAIDiagnosticApp;
